@@ -86,14 +86,18 @@ func TestInotifyEvents(t *testing.T) {
 
 func TestInotifyClose(t *testing.T) {
 	watcher, _ := NewWatcher()
-	watcher.Close()
+	if err := watcher.Close(); err != nil {
+		t.Fatalf("close returns: %s", err)
+	}
 	if watcher.IsValid() {
 		t.Fatal("still valid after Close()")
 	}
 
 	done := make(chan bool)
 	go func() {
-		watcher.Close()
+		if err := watcher.Close(); err != nil {
+			t.Logf("second close returns: %s", err)
+		}
 		done <- true
 	}()
 
@@ -107,4 +111,109 @@ func TestInotifyClose(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on Watch() after Close(), got nil")
 	}
+}
+
+func TestIgnoredEvents(t *testing.T) {
+	// Create an inotify watcher instance and initialize it
+	watcher, err := NewWatcher()
+	if err != nil {
+		t.Fatalf("NewWatcher failed: %s", err)
+	}
+
+	dir, err := ioutil.TempDir("", "inotify")
+	if err != nil {
+		t.Fatalf("TempDir failed: %s", err)
+	}
+	defer os.RemoveAll(dir)
+
+	// Add a watch for "_test"
+	err = watcher.Watch(dir)
+	if err != nil {
+		t.Fatalf("Watch failed: %s", err)
+	}
+
+	// Receive errors on the error channel on a separate goroutine
+	go func() {
+		for err := range watcher.Error {
+			t.Fatalf("error received: %s", err)
+		}
+	}()
+
+	testFileName := dir + "/TestInotifyEvents.testfile"
+
+	// Receive events on the event channel on a separate goroutine
+	eventstream := watcher.Event
+	var event *Event
+
+	// IN_CREATE, IN_OPEN
+	testFile, err := os.OpenFile(testFileName, os.O_WRONLY|os.O_CREATE, 0666)
+	if err != nil {
+		t.Fatalf("creating test file: %s", err)
+	}
+	event = <-eventstream
+	if event.Mask & IN_CREATE == 0 {
+		t.Fatal("inotify hasn't received IN_CREATE")
+	}
+	event = <-eventstream
+	if event.Mask & IN_OPEN == 0 {
+		t.Fatal("inotify hasn't received IN_OPEN")
+	}
+
+	// IN_CLOSE
+	testFile.Close()
+	event = <-eventstream
+	if event.Mask & IN_CLOSE == 0 {
+		t.Fatal("inotify hasn't received IN_CLOSE")
+	}
+
+	// IN_DELETE
+	if err = os.Remove(testFileName); err != nil {
+		t.Fatal("removing test file: %s", err)
+	}
+	event = <-eventstream
+	if event.Mask & IN_DELETE == 0 {
+		t.Fatal("inotify hasn't received IN_DELETE")
+	}
+
+	// IN_DELETE_SELF, IN_IGNORED
+	os.RemoveAll(dir)
+	event = <-eventstream
+	if event.Mask & (IN_DELETE_SELF | IN_ONLYDIR) == 0 {
+		t.Fatal("inotify hasn't received IN_DELETE_SELF")
+	}
+	event = <-eventstream
+	if event.Mask & (IN_IGNORED | IN_ONLYDIR) == 0 {
+		t.Fatal("inotify hasn't received IN_IGNORED")
+	}
+
+	// mk/rm dir repeatedly
+	for j := 0; j < 64; j++ {
+		if err = os.MkdirAll(dir, 0755); err != nil {
+			t.Fatalf("MkdirAll tempdir[%s] again failed: %s", dir, err)
+		}
+		if err = watcher.Watch(dir); err != nil {
+			t.Fatalf("Watch failed: %s", err)
+		}
+		os.RemoveAll(dir)
+		// IN_DELETE_SELF, IN_IGNORED
+		event = <-eventstream
+		if event.Mask & (IN_DELETE_SELF | IN_ONLYDIR) == 0 {
+			t.Fatal("inotify hasn't received IN_DELETE_SELF")
+		}
+		if event.Name != dir {
+			t.Fatalf("received different name event: %s", event)
+		}
+		event = <-eventstream
+		if event.Mask & (IN_IGNORED | IN_ONLYDIR) == 0 {
+			t.Fatal("inotify hasn't received IN_IGNORED")
+		}
+		if event.Name != dir {
+			t.Fatalf("received different name event: %s", event)
+		}
+	}
+
+	if watcher.Len() != 0 {
+		t.Fatal("watcher entries should be 0")
+	}
+	watcher.Close()
 }

@@ -253,6 +253,10 @@ func (w *Watcher) readEvents() error {
 		// the "paths" map.
 		w.mu.Lock()
 		event.Name = w.paths[int(raw.Wd)]
+		if event.Mask & IN_IGNORED != 0 {
+			delete(w.paths, int(raw.Wd))
+			delete(w.watches, event.Name)
+		}
 		w.mu.Unlock()
 		if nameLen > 0 {
 			// Point "bytes" at the first byte of the filename
@@ -272,6 +276,11 @@ func (w *Watcher) readEvents() error {
 
 func (w *Watcher) IsValid() bool {
 	return w.running
+}
+
+func (w *Watcher) Len() int {
+	// lock?
+	return len(w.watches)
 }
 
 // String formats the event e in the form

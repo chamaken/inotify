@@ -79,7 +79,16 @@ func NewWatcher() (*Watcher, error) {
 		done:    make(chan bool, 1),
 	}
 
-	go w.epollEvents()
+	epfd, err := syscall.EpollCreate1(0)
+	if err != nil {
+		return nil, err
+	}
+	event := &syscall.EpollEvent{syscall.EPOLLIN, int32(w.fd), 0}
+	if err = syscall.EpollCtl(epfd, syscall.EPOLL_CTL_ADD, w.fd, event); err != nil {
+		return nil, err
+	}
+	go w.epollEvents(epfd)
+
 	return w, nil
 }
 
@@ -151,20 +160,9 @@ func (w *Watcher) RemoveWatch(path string) error {
 	return nil
 }
 
-func (w *Watcher) epollEvents() {
-	epfd, err := syscall.EpollCreate1(0)
-	if err != nil {
-		w.Error <- os.NewSyscallError("epoll_create1", err)
-		return
-	}
-	defer syscall.Close(epfd)
-
+func (w *Watcher) epollEvents(epfd int) {
 	events := make([]syscall.EpollEvent, EPOLL_MAX_EVENTS) // XXX: MAGIC NUMBER
-	event := &syscall.EpollEvent{syscall.EPOLLIN, int32(w.fd), 0}
-	if err = syscall.EpollCtl(epfd, syscall.EPOLL_CTL_ADD, w.fd, event); err != nil {
-		w.Error <- os.NewSyscallError("epoll_ctl", err)
-		return
-	}
+	defer syscall.Close(epfd)
 
 	for {
 		nevents, err := syscall.EpollWait(epfd, events, EPOLL_TIMEOUT)
@@ -194,7 +192,7 @@ func (w *Watcher) epollEvents() {
 		}
 
 		for i := 0; i < nevents; i++ {
-			if events[i].Fd != event.Fd {
+			if events[i].Fd != int32(w.fd) {
 				continue
 			}
 			err = w.readEvents()

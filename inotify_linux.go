@@ -62,6 +62,7 @@ type Watcher struct {
 	Event    chan *Event       // Events are returned on this channel
 	done     chan bool         // Channel for sending a "quit message" to the reader goroutine
 	closed   chan bool         // Channel for syncing Close()s
+	running  bool              // is go routine running?
 }
 
 // NewWatcher creates and returns a new inotify instance using inotify_init(2)
@@ -167,8 +168,10 @@ func (w *Watcher) RemoveWatch(path string) error {
 }
 
 func (w *Watcher) epollEvents(epfd int) {
-	events := make([]syscall.EpollEvent, EPOLL_MAX_EVENTS) // XXX: MAGIC NUMBER
+	w.running = true
+	defer func() { w.running = false }()
 	defer syscall.Close(epfd)
+	events := make([]syscall.EpollEvent, EPOLL_MAX_EVENTS)
 
 	for {
 		nevents, err := syscall.EpollWait(epfd, events, EPOLL_TIMEOUT)
@@ -261,6 +264,10 @@ func (w *Watcher) readEvents() error {
 	}
 
 	return nil
+}
+
+func (w *Watcher) IsValid() bool {
+	return w.running
 }
 
 // String formats the event e in the form

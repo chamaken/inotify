@@ -87,6 +87,9 @@ func TestInotifyEvents(t *testing.T) {
 func TestInotifyClose(t *testing.T) {
 	watcher, _ := NewWatcher()
 	watcher.Close()
+	if watcher.IsValid() {
+		t.Fatal("still valid after Close()")
+	}
 
 	done := make(chan bool)
 	go func() {

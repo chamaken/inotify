@@ -93,6 +93,8 @@ func TestInotifyClose(t *testing.T) {
 		watcher.Close()
 		done <- true
 	}()
+	// wait epoll_wait timeout
+	time.Sleep(1 * time.Second)
 
 	select {
 	case <-done:

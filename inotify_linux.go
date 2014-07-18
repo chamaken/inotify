@@ -29,11 +29,17 @@ package inotify
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"sync"
 	"syscall"
 	"unsafe"
+)
+
+const (
+	EPOLL_MAX_EVENTS	= 64
+	EPOLL_TIMEOUT		= 1 * 1000
 )
 
 type Event struct {
@@ -73,7 +79,7 @@ func NewWatcher() (*Watcher, error) {
 		done:    make(chan bool, 1),
 	}
 
-	go w.readEvents()
+	go w.epollEvents()
 	return w, nil
 }
 
@@ -146,24 +152,31 @@ func (w *Watcher) RemoveWatch(path string) error {
 	return nil
 }
 
-// readEvents reads from the inotify file descriptor, converts the
-// received events into Event objects and sends them via the Event channel
-func (w *Watcher) readEvents() {
-	var buf [syscall.SizeofInotifyEvent * 4096]byte
+func (w *Watcher) epollEvents() {
+	epfd, err := syscall.EpollCreate1(0)
+	if err != nil {
+		w.Error <- os.NewSyscallError("epoll_create1", err)
+		return
+	}
+	defer syscall.Close(epfd)
+
+	events := make([]syscall.EpollEvent, EPOLL_MAX_EVENTS) // XXX: MAGIC NUMBER
+	event := &syscall.EpollEvent{syscall.EPOLLIN, int32(w.fd), 0}
+	if err = syscall.EpollCtl(epfd, syscall.EPOLL_CTL_ADD, w.fd, event); err != nil {
+		w.Error <- os.NewSyscallError("epoll_ctl", err)
+		return
+	}
 
 	for {
-		n, err := syscall.Read(w.fd, buf[:])
+		nevents, err := syscall.EpollWait(epfd, events, EPOLL_TIMEOUT)
+
 		// See if there is a message on the "done" channel
 		var done bool
 		select {
 		case done = <-w.done:
 		default:
 		}
-
-		// If EOF or a "done" message is received
-		if n == 0 || done {
-			// The syscall.Close can be slow.  Close
-			// w.Event first.
+		if done {
 			close(w.Event)
 			err := syscall.Close(w.fd)
 			if err != nil {
@@ -173,45 +186,82 @@ func (w *Watcher) readEvents() {
 			w.isClosed = true
 			return
 		}
-		if n < 0 {
-			w.Error <- os.NewSyscallError("read", err)
+		if err != nil {
+			w.Error <- os.NewSyscallError("epoll_wait", err)
 			continue
 		}
-		if n < syscall.SizeofInotifyEvent {
-			w.Error <- errors.New("inotify: short read in readEvents()")
+		if nevents == 0 {
 			continue
 		}
 
-		var offset uint32 = 0
-		// We don't know how many events we just read into the buffer
-		// While the offset points to at least one whole event...
-		for offset <= uint32(n-syscall.SizeofInotifyEvent) {
-			// Point "raw" to the event in the buffer
-			raw := (*syscall.InotifyEvent)(unsafe.Pointer(&buf[offset]))
-			event := new(Event)
-			event.Mask = uint32(raw.Mask)
-			event.Cookie = uint32(raw.Cookie)
-			nameLen := uint32(raw.Len)
-			// If the event happened to the watched directory or the watched file, the kernel
-			// doesn't append the filename to the event, but we would like to always fill the
-			// the "Name" field with a valid filename. We retrieve the path of the watch from
-			// the "paths" map.
-			w.mu.Lock()
-			event.Name = w.paths[int(raw.Wd)]
-			w.mu.Unlock()
-			if nameLen > 0 {
-				// Point "bytes" at the first byte of the filename
-				bytes := (*[syscall.PathMax]byte)(unsafe.Pointer(&buf[offset+syscall.SizeofInotifyEvent]))
-				// The filename is padded with NUL bytes. TrimRight() gets rid of those.
-				event.Name += "/" + strings.TrimRight(string(bytes[0:nameLen]), "\000")
+		for i := 0; i < nevents; i++ {
+			if events[i].Fd != event.Fd {
+				continue
 			}
-			// Send the event on the events channel
-			w.Event <- event
-
-			// Move to the next event in the buffer
-			offset += syscall.SizeofInotifyEvent + nameLen
+			err = w.readEvents()
+			if err == io.EOF {
+				return
+			} else if err != nil {
+				w.Error <- os.NewSyscallError("epoll_wait", err)
+			}
 		}
 	}
+}				
+
+// readEvents reads from the inotify file descriptor, converts the
+// received events into Event objects and sends them via the Event channel
+func (w *Watcher) readEvents() error {
+	var buf [syscall.SizeofInotifyEvent * 4096]byte
+
+	n, err := syscall.Read(w.fd, buf[:])
+
+	// If EOF or a "done" message is received
+	switch {
+	case err == syscall.EINTR:
+		return nil
+	case err != nil:
+		return os.NewSyscallError("read", err)
+	case n == 0:
+		return errors.New("inotify: possibilly too many events occurred at once")
+	case n < syscall.SizeofInotifyEvent:
+		// brefore: syscall.Read
+		//   while n < syscall.SizeofInotifyEvent:
+		// 	  syscall.Ioctl(w.fd, syscall.FIONREAD, &n);
+		//
+		return errors.New("inotify: short read in readEvents()")
+	}
+
+	var offset uint32 = 0
+	// We don't know how many events we just read into the buffer
+	// While the offset points to at least one whole event...
+	for offset <= uint32(n-syscall.SizeofInotifyEvent) {
+		// Point "raw" to the event in the buffer
+		raw := (*syscall.InotifyEvent)(unsafe.Pointer(&buf[offset]))
+		event := new(Event)
+		event.Mask = uint32(raw.Mask)
+		event.Cookie = uint32(raw.Cookie)
+		nameLen := uint32(raw.Len)
+		// If the event happened to the watched directory or the watched file, the kernel
+		// doesn't append the filename to the event, but we would like to always fill the
+		// the "Name" field with a valid filename. We retrieve the path of the watch from
+		// the "paths" map.
+		w.mu.Lock()
+		event.Name = w.paths[int(raw.Wd)]
+		w.mu.Unlock()
+		if nameLen > 0 {
+			// Point "bytes" at the first byte of the filename
+			bytes := (*[syscall.PathMax]byte)(unsafe.Pointer(&buf[offset+syscall.SizeofInotifyEvent]))
+			// The filename is padded with NUL bytes. TrimRight() gets rid of those.
+			event.Name += "/" + strings.TrimRight(string(bytes[0:nameLen]), "\000")
+		}
+		// Send the event on the events channel
+		w.Event <- event
+
+		// Move to the next event in the buffer
+		offset += syscall.SizeofInotifyEvent + nameLen
+	}
+
+	return nil
 }
 
 // String formats the event e in the form

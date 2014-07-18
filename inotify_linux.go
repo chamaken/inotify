@@ -84,7 +84,6 @@ func (w *Watcher) Close() error {
 	if w.isClosed {
 		return nil
 	}
-	w.isClosed = true
 
 	// Send "quit" message to the reader goroutine
 	w.done <- true
@@ -171,6 +170,7 @@ func (w *Watcher) readEvents() {
 				w.Error <- os.NewSyscallError("close", err)
 			}
 			close(w.Error)
+			w.isClosed = true
 			return
 		}
 		if n < 0 {

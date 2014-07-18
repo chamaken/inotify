@@ -164,6 +164,7 @@ func (w *Watcher) RemoveWatch(path string) error {
 		return os.NewSyscallError("inotify_rm_watch", errno)
 	}
 	delete(w.watches, path)
+	delete(w.paths, int(watch.wd))
 	return nil
 }
 

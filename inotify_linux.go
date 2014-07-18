@@ -114,10 +114,10 @@ func (w *Watcher) AddWatch(path string, flags uint32) error {
 	}
 
 	w.mu.Lock() // synchronize with readEvents goroutine
+	defer w.mu.Unlock()
 
 	wd, err := syscall.InotifyAddWatch(w.fd, path, flags)
 	if err != nil {
-		w.mu.Unlock()
 		return &os.PathError{
 			Op:   "inotify_add_watch",
 			Path: path,
@@ -129,7 +129,6 @@ func (w *Watcher) AddWatch(path string, flags uint32) error {
 		w.watches[path] = &watch{wd: uint32(wd), flags: flags}
 		w.paths[wd] = path
 	}
-	w.mu.Unlock()
 	return nil
 }
 

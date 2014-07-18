@@ -123,14 +123,14 @@ func (w *Watcher) Close() error {
 // AddWatch adds path to the watched file set.
 // The flags are interpreted as described in inotify_add_watch(2).
 func (w *Watcher) AddWatch(path string, flags uint32) error {
+	w.mu.Lock() // synchronization of Watcher map
+	defer w.mu.Unlock()
+
 	watchEntry, found := w.watches[path]
 	if found {
 		watchEntry.flags |= flags
 		flags |= syscall.IN_MASK_ADD
 	}
-
-	w.mu.Lock() // synchronize with readEvents goroutine
-	defer w.mu.Unlock()
 
 	wd, err := syscall.InotifyAddWatch(w.fd, path, flags)
 	if err != nil {
@@ -155,6 +155,9 @@ func (w *Watcher) Watch(path string) error {
 
 // RemoveWatch removes path from the watched file set.
 func (w *Watcher) RemoveWatch(path string) error {
+	w.mu.Lock() // synchronization of Watcher map
+	defer w.mu.Unlock()
+
 	watch, ok := w.watches[path]
 	if !ok {
 		return errors.New(fmt.Sprintf("can't remove non-existent inotify watch for: %s", path))

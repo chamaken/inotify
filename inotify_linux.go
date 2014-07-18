@@ -61,7 +61,7 @@ type Watcher struct {
 	Error    chan error        // Errors are sent on this channel
 	Event    chan *Event       // Events are returned on this channel
 	done     chan bool         // Channel for sending a "quit message" to the reader goroutine
-	isClosed bool              // Set to true when Close() is first called
+	closed   chan bool         // Channel for syncing Close()s
 }
 
 // NewWatcher creates and returns a new inotify instance using inotify_init(2)
@@ -77,6 +77,7 @@ func NewWatcher() (*Watcher, error) {
 		Event:   make(chan *Event),
 		Error:   make(chan error),
 		done:    make(chan bool, 1),
+		closed:  make(chan bool),
 	}
 
 	epfd, err := syscall.EpollCreate1(0)
@@ -96,15 +97,24 @@ func NewWatcher() (*Watcher, error) {
 // It sends a message to the reader goroutine to quit and removes all watches
 // associated with the inotify instance
 func (w *Watcher) Close() error {
-	if w.isClosed {
-		return nil
+	w.mu.Lock() // synchronize fd invalidation
+	if err := syscall.Close(w.fd); err != nil {
+		w.mu.Unlock()
+		return os.NewSyscallError("close", err)
 	}
+
+	// invalidate w members
+	w.fd = -1
+	w.mu.Unlock()
+
+	// inotify(7):
+	// When  all file descriptors referring to an inotify instance have been
+	// closed, ...; all associated watches are automatically freed.
 
 	// Send "quit" message to the reader goroutine
 	w.done <- true
-	for path := range w.watches {
-		w.RemoveWatch(path)
-	}
+	// And receive it's actually closed
+	<- w.closed
 
 	return nil
 }
@@ -112,10 +122,6 @@ func (w *Watcher) Close() error {
 // AddWatch adds path to the watched file set.
 // The flags are interpreted as described in inotify_add_watch(2).
 func (w *Watcher) AddWatch(path string, flags uint32) error {
-	if w.isClosed {
-		return errors.New("inotify instance already closed")
-	}
-
 	watchEntry, found := w.watches[path]
 	if found {
 		watchEntry.flags |= flags
@@ -175,12 +181,8 @@ func (w *Watcher) epollEvents(epfd int) {
 		}
 		if done {
 			close(w.Event)
-			err := syscall.Close(w.fd)
-			if err != nil {
-				w.Error <- os.NewSyscallError("close", err)
-			}
 			close(w.Error)
-			w.isClosed = true
+			w.closed <- true
 			return
 		}
 		if err != nil {

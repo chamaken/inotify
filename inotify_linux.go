@@ -37,10 +37,7 @@ import (
 	"unsafe"
 )
 
-const (
-	EPOLL_MAX_EVENTS	= 64
-	EPOLL_TIMEOUT		= 1 * 1000
-)
+const EPOLL_MAX_EVENTS	= 64
 
 type Event struct {
 	Mask   uint32 // Mask of events
@@ -81,15 +78,30 @@ func NewWatcher() (*Watcher, error) {
 		closed:  make(chan bool),
 	}
 
+	rp, wp, err := os.Pipe() // for done
+	if err != nil {
+		return nil, os.NewSyscallError("Pipe", err)
+	}
+	go func() {
+		for b := <- w.done; b; b = <- w.done {
+			wp.Close()
+		}
+	}()
+
 	epfd, err := syscall.EpollCreate1(0)
 	if err != nil {
-		return nil, err
+		return nil, os.NewSyscallError("epoll_create1", err)
 	}
 	event := &syscall.EpollEvent{syscall.EPOLLIN, int32(w.fd), 0}
 	if err = syscall.EpollCtl(epfd, syscall.EPOLL_CTL_ADD, w.fd, event); err != nil {
-		return nil, err
+		return nil, os.NewSyscallError("epoll_ctl", err)
 	}
-	go w.epollEvents(epfd)
+	event = &syscall.EpollEvent{syscall.EPOLLIN, int32(rp.Fd()), 0}
+	if err = syscall.EpollCtl(epfd, syscall.EPOLL_CTL_ADD, int(rp.Fd()), event); err != nil {
+		return nil, os.NewSyscallError("epoll_ctl", err)
+	}
+
+	go w.epollEvents(epfd, rp)
 
 	return w, nil
 }
@@ -104,7 +116,7 @@ func (w *Watcher) Close() error {
 		return os.NewSyscallError("close", err)
 	}
 
-	// invalidate w members
+	// invalidate inotify descriptor
 	w.fd = -1
 	w.mu.Unlock()
 
@@ -114,7 +126,7 @@ func (w *Watcher) Close() error {
 
 	// Send "quit" message to the reader goroutine
 	w.done <- true
-	// And receive it's actually closed
+	// And wait receiving it's actually closed
 	<- w.closed
 
 	return nil
@@ -171,27 +183,14 @@ func (w *Watcher) RemoveWatch(path string) error {
 	return nil
 }
 
-func (w *Watcher) epollEvents(epfd int) {
+func (w *Watcher) epollEvents(epfd int, donef *os.File) {
 	w.running = true
 	defer func() { w.running = false }()
 	defer syscall.Close(epfd)
 	events := make([]syscall.EpollEvent, EPOLL_MAX_EVENTS)
-
+	donefd := int32(donef.Fd())
 	for {
-		nevents, err := syscall.EpollWait(epfd, events, EPOLL_TIMEOUT)
-
-		// See if there is a message on the "done" channel
-		var done bool
-		select {
-		case done = <-w.done:
-		default:
-		}
-		if done {
-			close(w.Event)
-			close(w.Error)
-			w.closed <- true
-			return
-		}
+		nevents, err := syscall.EpollWait(epfd, events, -1)
 		if err != nil {
 			w.Error <- os.NewSyscallError("epoll_wait", err)
 			continue
@@ -201,7 +200,15 @@ func (w *Watcher) epollEvents(epfd int) {
 		}
 
 		for i := 0; i < nevents; i++ {
-			if events[i].Fd != int32(w.fd) {
+			if events[i].Fd == donefd {
+				if err = donef.Close(); err != nil {
+					w.Error <- os.NewSyscallError("Close", err)
+				}
+				close(w.Event)
+				close(w.Error)
+				w.closed <- true
+				return
+			} else if events[i].Fd != int32(w.fd) {
 				continue
 			}
 			err = w.readEvents()

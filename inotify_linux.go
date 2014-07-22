@@ -23,6 +23,14 @@ Example:
         }
     }
 
+Note from inotify(7):
+
+    IN_IGNORED        Watch  was removed explicitly (inotify_rm_watch(2)) or
+                      automatically (file was deleted, or file system was unmounted).
+
+You will receive the event in case of not only RemoveWatch() but also remove a
+watch file / directory. In addition to it, you will receive IN_IGNORED if
+IN_ONESHOT flag to AddWatch().
 */
 package inotify
 

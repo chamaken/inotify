@@ -1,3 +1,8 @@
+This repo is a fork of https://godoc.org/code.google.com/p/go.exp/inotify
+for solving issue 2483.
+
+----------------
+
 This subrepository holds experimental and deprecated (in the "old"
 directory) packages.
 

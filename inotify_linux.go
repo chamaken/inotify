@@ -54,8 +54,9 @@ type Event struct {
 }
 
 type watch struct {
-	wd    uint32 // Watch descriptor (as returned by the inotify_add_watch() syscall)
-	flags uint32 // inotify flags of this watch (see inotify(7) for the list of valid flags)
+	wd     uint32            // Watch descriptor (as returned by the inotify_add_watch() syscall)
+	flags  uint32            // inotify flags of this watch (see inotify(7) for the list of valid flags)
+	filter func(*Event) bool // filter function which retuns true if got interested event
 }
 
 type Watcher struct {
@@ -88,7 +89,7 @@ func NewWatcher() (*Watcher, error) {
 
 	rp, wp, err := os.Pipe() // for done
 	if err != nil {
-		return nil, os.NewSyscallError("Pipe", err)
+		return nil, err
 	}
 	go func() {
 		for b := <- w.done; b; b = <- w.done {
@@ -142,7 +143,7 @@ func (w *Watcher) Close() error {
 
 // AddWatch adds path to the watched file set.
 // The flags are interpreted as described in inotify_add_watch(2).
-func (w *Watcher) AddWatch(path string, flags uint32) error {
+func (w *Watcher) AddWatch(path string, flags uint32, filter func(*Event) bool) error {
 	w.mu.Lock() // synchronization of Watcher map
 	defer w.mu.Unlock()
 
@@ -162,15 +163,15 @@ func (w *Watcher) AddWatch(path string, flags uint32) error {
 	}
 
 	if !found {
-		w.watches[path] = &watch{wd: uint32(wd), flags: flags}
+		w.watches[path] = &watch{wd: uint32(wd), flags: flags, filter: filter}
 		w.paths[wd] = path
 	}
 	return nil
 }
 
 // Watch adds path to the watched file set, watching all events.
-func (w *Watcher) Watch(path string) error {
-	return w.AddWatch(path, IN_ALL_EVENTS)
+func (w *Watcher) Watch(path string, filter func(*Event) bool) error {
+	return w.AddWatch(path, IN_ALL_EVENTS, filter)
 }
 
 // RemoveWatch removes path from the watched file set.
@@ -210,7 +211,7 @@ func (w *Watcher) epollEvents(epfd int, donef *os.File) {
 		for i := 0; i < nevents; i++ {
 			if events[i].Fd == donefd {
 				if err = donef.Close(); err != nil {
-					w.Error <- os.NewSyscallError("Close", err)
+					w.Error <- err
 				}
 				close(w.Event)
 				close(w.Error)
@@ -223,7 +224,7 @@ func (w *Watcher) epollEvents(epfd int, donef *os.File) {
 			if err == io.EOF {
 				return
 			} else if err != nil {
-				w.Error <- os.NewSyscallError("epoll_wait", err)
+				w.Error <- err
 			}
 		}
 	}
@@ -236,7 +237,6 @@ func (w *Watcher) readEvents() error {
 
 	n, err := syscall.Read(w.fd, buf[:])
 
-	// If EOF or a "done" message is received
 	switch {
 	case err == syscall.EINTR:
 		return nil
@@ -268,6 +268,7 @@ func (w *Watcher) readEvents() error {
 		// the "paths" map.
 		w.mu.Lock()
 		event.Name = w.paths[int(raw.Wd)]
+		filter := w.watches[event.Name].filter
 		if event.Mask & IN_IGNORED != 0 {
 			delete(w.paths, int(raw.Wd))
 			delete(w.watches, event.Name)
@@ -280,7 +281,9 @@ func (w *Watcher) readEvents() error {
 			event.Name += "/" + strings.TrimRight(string(bytes[0:nameLen]), "\000")
 		}
 		// Send the event on the events channel
-		w.Event <- event
+		if filter == nil || filter(event) {
+			w.Event <- event
+		} 
 
 		// Move to the next event in the buffer
 		offset += syscall.SizeofInotifyEvent + nameLen

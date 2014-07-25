@@ -28,7 +28,7 @@ func TestInotifyEvents(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	// Add a watch for "_test"
-	err = watcher.Watch(dir)
+	err = watcher.Watch(dir, nil)
 	if err != nil {
 		t.Fatalf("Watch failed: %s", err)
 	}
@@ -107,7 +107,7 @@ func TestInotifyClose(t *testing.T) {
 		t.Fatal("double Close() test failed: second Close() call didn't return")
 	}
 
-	err := watcher.Watch(os.TempDir())
+	err := watcher.Watch(os.TempDir(), nil)
 	if err == nil {
 		t.Fatal("expected error on Watch() after Close(), got nil")
 	}
@@ -127,7 +127,7 @@ func TestIgnoredEvents(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	// Add a watch for "_test"
-	err = watcher.Watch(dir)
+	err = watcher.Watch(dir, nil)
 	if err != nil {
 		t.Fatalf("Watch failed: %s", err)
 	}
@@ -191,7 +191,7 @@ func TestIgnoredEvents(t *testing.T) {
 		if err = os.MkdirAll(dir, 0755); err != nil {
 			t.Fatalf("MkdirAll tempdir[%s] again failed: %s", dir, err)
 		}
-		if err = watcher.Watch(dir); err != nil {
+		if err = watcher.Watch(dir, nil); err != nil {
 			t.Fatalf("Watch failed: %s", err)
 		}
 		os.RemoveAll(dir)
@@ -232,7 +232,7 @@ func TestInotifyOneshot(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	// Add a watch for "_test" with IN_ONESHOT flag
-	err = watcher.AddWatch(dir, IN_ALL_EVENTS|IN_ONESHOT)
+	err = watcher.AddWatch(dir, IN_ALL_EVENTS|IN_ONESHOT, nil)
 	if err != nil {
 		t.Fatalf("Watch failed: %s", err)
 	}
@@ -288,4 +288,85 @@ func TestInotifyOneshot(t *testing.T) {
 	case <-time.After(1 * time.Second):
 		t.Fatal("event stream was not closed after 1 second")
 	}
+}
+
+func TestFilterEvent(t *testing.T) {
+	// Create an inotify watcher instance and initialize it
+	watcher, err := NewWatcher()
+	if err != nil {
+		t.Fatalf("NewWatcher failed: %s", err)
+	}
+	dir, err := ioutil.TempDir("", "inotify")
+	if err != nil {
+		t.Fatalf("TempDir failed: %s", err)
+	}
+	defer os.RemoveAll(dir)
+
+	testFileName := dir + "/TestInotifyEvents.testfile"
+	err = watcher.Watch(dir, func(ev *Event) bool {
+		return ev.Name == testFileName
+	})
+	if err != nil {
+		t.Fatalf("Watch failed: %s", err)
+	}
+
+	// Receive errors on the error channel on a separate goroutine
+	go func() {
+		for err := range watcher.Error {
+			t.Fatalf("error received: %s", err)
+		}
+	}()
+
+
+	// Receive events on the event channel on a separate goroutine
+	eventstream := watcher.Event
+	var event *Event
+
+	// IN_CREATE, IN_OPEN
+	testFile, err := os.OpenFile(testFileName, os.O_WRONLY|os.O_CREATE, 0666)
+	if err != nil {
+		t.Fatalf("creating test file: %s", err)
+	}
+	event = <-eventstream
+	if event.Mask & IN_CREATE == 0 {
+		t.Fatal("inotify hasn't received IN_CREATE")
+	}
+	event = <-eventstream
+	if event.Mask & IN_OPEN == 0 {
+		t.Fatal("inotify hasn't received IN_OPEN")
+	}
+
+	// IN_CLOSE
+	testFile.Close()
+	event = <-eventstream
+	if event.Mask & IN_CLOSE == 0 {
+		t.Fatal("inotify hasn't received IN_CLOSE")
+	}
+
+	// IN_DELETE
+	if err = os.Remove(testFileName); err != nil {
+		t.Fatal("removing test file: %s", err)
+	}
+	event = <-eventstream
+	if event.Mask & IN_DELETE == 0 {
+		t.Fatal("inotify hasn't received IN_DELETE")
+	}
+
+	// unrelated filename
+	dummyFileName := dir + "/TestInotifyEvents.dummyfile"
+	dummyFile, err := os.OpenFile(dummyFileName, os.O_WRONLY|os.O_CREATE, 0666)
+	if err != nil {
+		t.Fatalf("creating test file: %s", err)
+	}
+	defer dummyFile.Close()
+	event = nil
+	select {
+	case event = <-eventstream:
+	default:
+	}
+	if event != nil {
+		t.Fatal("receive unrelated event: %v", event)
+	}
+
+	watcher.Close()
 }

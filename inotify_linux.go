@@ -119,6 +119,14 @@ func NewWatcher() (*Watcher, error) {
 // It sends a message to the reader goroutine to quit and removes all watches
 // associated with the inotify instance
 func (w *Watcher) Close() error {
+	if w.fd < 0 {
+		return os.NewSyscallError("close", syscall.EBADF)
+	}
+	// Send "quit" message to the reader goroutine
+	w.done <- true
+	// And wait receiving it's actually closed
+	<- w.closed
+
 	w.mu.Lock() // synchronize fd invalidation
 	if err := syscall.Close(w.fd); err != nil {
 		w.mu.Unlock()
@@ -132,11 +140,6 @@ func (w *Watcher) Close() error {
 	// inotify(7):
 	// When  all file descriptors referring to an inotify instance have been
 	// closed, ...; all associated watches are automatically freed.
-
-	// Send "quit" message to the reader goroutine
-	w.done <- true
-	// And wait receiving it's actually closed
-	<- w.closed
 
 	return nil
 }

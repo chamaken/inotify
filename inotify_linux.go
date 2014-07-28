@@ -61,6 +61,7 @@ type watch struct {
 
 type Watcher struct {
 	mu       sync.Mutex
+	cond     *sync.Cond        // sync removing on rm_watch with IN_IGNORE
 	fd       int               // File descriptor (as returned by the inotify_init() syscall)
 	watches  map[string]*watch // Map of inotify watches (key: path)
 	paths    map[int]string    // Map of watched paths (key: watch descriptor)
@@ -86,6 +87,7 @@ func NewWatcher() (*Watcher, error) {
 		done:    make(chan bool, 1),
 		closed:  make(chan bool),
 	}
+	w.cond = sync.NewCond(&w.mu)
 
 	rp, wp, err := os.Pipe() // for done
 	if err != nil {
@@ -180,9 +182,9 @@ func (w *Watcher) Watch(path string, filter func(*Event) bool) error {
 // RemoveWatch removes path from the watched file set.
 func (w *Watcher) RemoveWatch(path string) error {
 	w.mu.Lock() // synchronization of Watcher map
-	watch, ok := w.watches[path]
-	w.mu.Unlock()
+	defer w.mu.Unlock()
 
+	watch, ok := w.watches[path]
 	if !ok {
 		return errors.New(fmt.Sprintf("can't remove non-existent inotify watch for: %s", path))
 	}
@@ -190,8 +192,10 @@ func (w *Watcher) RemoveWatch(path string) error {
 	if success == -1 {
 		return os.NewSyscallError("inotify_rm_watch", errno)
 	}
-
-	// maps - w.watchs and w.paths - will deleted in readEvents IN_IGNORED flag
+	for ok {
+		w.cond.Wait()
+		_, ok = w.watches[path]
+	}
 	return nil
 }
 
@@ -276,6 +280,7 @@ func (w *Watcher) readEvents() error {
 			delete(w.paths, int(raw.Wd))
 			delete(w.watches, event.Name)
 		}
+		w.cond.Broadcast()
 		w.mu.Unlock()
 		if nameLen > 0 {
 			// Point "bytes" at the first byte of the filename

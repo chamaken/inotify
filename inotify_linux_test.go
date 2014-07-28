@@ -391,9 +391,6 @@ func TestRemoveWatch(t *testing.T) {
 		t.Fatalf("RemoveWatch failed: %s, err")
 	}
 
-	// We expect this event to be received almost immediately, but let's wait 1 s to be sure
-	time.Sleep(1 * time.Second)
-
 	var event *Event
 	select {
 	case event = <-watcher.Event:

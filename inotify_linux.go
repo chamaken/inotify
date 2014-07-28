@@ -180,9 +180,9 @@ func (w *Watcher) Watch(path string, filter func(*Event) bool) error {
 // RemoveWatch removes path from the watched file set.
 func (w *Watcher) RemoveWatch(path string) error {
 	w.mu.Lock() // synchronization of Watcher map
-	defer w.mu.Unlock()
-
 	watch, ok := w.watches[path]
+	w.mu.Unlock()
+
 	if !ok {
 		return errors.New(fmt.Sprintf("can't remove non-existent inotify watch for: %s", path))
 	}
@@ -190,8 +190,8 @@ func (w *Watcher) RemoveWatch(path string) error {
 	if success == -1 {
 		return os.NewSyscallError("inotify_rm_watch", errno)
 	}
-	delete(w.watches, path)
-	delete(w.paths, int(watch.wd))
+
+	// maps - w.watchs and w.paths - will deleted in readEvents IN_IGNORED flag
 	return nil
 }
 

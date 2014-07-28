@@ -370,3 +370,40 @@ func TestFilterEvent(t *testing.T) {
 
 	watcher.Close()
 }
+
+func TestRemoveWatch(t *testing.T) {
+	// Create an inotify watcher instance and initialize it
+	watcher, err := NewWatcher()
+	if err != nil {
+		t.Fatalf("NewWatcher failed: %s", err)
+	}
+	dir, err := ioutil.TempDir("", "inotify")
+	if err != nil {
+		t.Fatalf("TempDir failed: %s", err)
+	}
+	defer os.RemoveAll(dir)
+
+	if err = watcher.Watch(dir, nil); err != nil {
+		t.Fatalf("Watch failed: %s", err)
+	}
+
+	if err = watcher.RemoveWatch(dir); err != nil {
+		t.Fatalf("RemoveWatch failed: %s, err")
+	}
+
+	// We expect this event to be received almost immediately, but let's wait 1 s to be sure
+	time.Sleep(1 * time.Second)
+
+	var event *Event
+	select {
+	case event = <-watcher.Event:
+	default:
+	}
+	if event == nil {
+		t.Fatal("failed to receive event")
+	}
+	if event.Mask & IN_IGNORED == 0 {
+		t.Fatal("no IN_IGNORE flag in the event")
+	}
+}
+	

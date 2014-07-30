@@ -148,7 +148,11 @@ func (w *Watcher) Close() error {
 
 // AddWatch adds path to the watched file set.
 // The flags are interpreted as described in inotify_add_watch(2).
-func (w *Watcher) AddWatch(path string, flags uint32, filter func(*Event) bool) error {
+func (w *Watcher) AddWatch(path string, flags uint32) error {
+	return w.AddWatchFilter(path, flags, nil)
+}
+
+func (w *Watcher) AddWatchFilter(path string, flags uint32, filter func(*Event) bool) error {
 	w.mu.Lock() // synchronization of Watcher map
 	defer w.mu.Unlock()
 
@@ -175,8 +179,11 @@ func (w *Watcher) AddWatch(path string, flags uint32, filter func(*Event) bool) 
 }
 
 // Watch adds path to the watched file set, watching all events.
-func (w *Watcher) Watch(path string, filter func(*Event) bool) error {
-	return w.AddWatch(path, IN_ALL_EVENTS, filter)
+func (w *Watcher) Watch(path string) error {
+	return w.AddWatchFilter(path, IN_ALL_EVENTS, nil)
+}
+func (w *Watcher) WatchFilter(path string, filter func(*Event) bool) error {
+	return w.AddWatchFilter(path, IN_ALL_EVENTS, filter)
 }
 
 // RemoveWatch removes path from the watched file set.

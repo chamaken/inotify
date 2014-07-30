@@ -28,7 +28,7 @@ func TestInotifyEvents(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	// Add a watch for "_test"
-	err = watcher.Watch(dir, nil)
+	err = watcher.Watch(dir)
 	if err != nil {
 		t.Fatalf("Watch failed: %s", err)
 	}
@@ -107,7 +107,7 @@ func TestInotifyClose(t *testing.T) {
 		t.Fatal("double Close() test failed: second Close() call didn't return")
 	}
 
-	err := watcher.Watch(os.TempDir(), nil)
+	err := watcher.Watch(os.TempDir())
 	if err == nil {
 		t.Fatal("expected error on Watch() after Close(), got nil")
 	}
@@ -127,7 +127,7 @@ func TestIgnoredEvents(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	// Add a watch for "_test"
-	err = watcher.Watch(dir, nil)
+	err = watcher.Watch(dir)
 	if err != nil {
 		t.Fatalf("Watch failed: %s", err)
 	}
@@ -191,7 +191,7 @@ func TestIgnoredEvents(t *testing.T) {
 		if err = os.MkdirAll(dir, 0755); err != nil {
 			t.Fatalf("MkdirAll tempdir[%s] again failed: %s", dir, err)
 		}
-		if err = watcher.Watch(dir, nil); err != nil {
+		if err = watcher.Watch(dir); err != nil {
 			t.Fatalf("Watch failed: %s", err)
 		}
 		os.RemoveAll(dir)
@@ -232,7 +232,7 @@ func TestInotifyOneshot(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	// Add a watch for "_test" with IN_ONESHOT flag
-	err = watcher.AddWatch(dir, IN_ALL_EVENTS|IN_ONESHOT, nil)
+	err = watcher.AddWatchFilter(dir, IN_ALL_EVENTS|IN_ONESHOT, nil)
 	if err != nil {
 		t.Fatalf("Watch failed: %s", err)
 	}
@@ -303,7 +303,7 @@ func TestFilterEvent(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	testFileName := dir + "/TestInotifyEvents.testfile"
-	err = watcher.Watch(dir, func(ev *Event) bool {
+	err = watcher.WatchFilter(dir, func(ev *Event) bool {
 		return ev.Name == testFileName
 	})
 	if err != nil {
@@ -328,10 +328,12 @@ func TestFilterEvent(t *testing.T) {
 		t.Fatalf("creating test file: %s", err)
 	}
 	event = <-eventstream
+	t.Logf("event received: %s", event)
 	if event.Mask & IN_CREATE == 0 {
 		t.Fatal("inotify hasn't received IN_CREATE")
 	}
 	event = <-eventstream
+	t.Logf("event received: %s", event)
 	if event.Mask & IN_OPEN == 0 {
 		t.Fatal("inotify hasn't received IN_OPEN")
 	}
@@ -339,6 +341,7 @@ func TestFilterEvent(t *testing.T) {
 	// IN_CLOSE
 	testFile.Close()
 	event = <-eventstream
+	t.Logf("event received: %s", event)
 	if event.Mask & IN_CLOSE == 0 {
 		t.Fatal("inotify hasn't received IN_CLOSE")
 	}
@@ -348,6 +351,7 @@ func TestFilterEvent(t *testing.T) {
 		t.Fatal("removing test file: %s", err)
 	}
 	event = <-eventstream
+	t.Logf("event received: %s", event)
 	if event.Mask & IN_DELETE == 0 {
 		t.Fatal("inotify hasn't received IN_DELETE")
 	}
@@ -383,7 +387,7 @@ func TestRemoveWatch(t *testing.T) {
 	}
 	defer os.RemoveAll(dir)
 
-	if err = watcher.Watch(dir, nil); err != nil {
+	if err = watcher.Watch(dir); err != nil {
 		t.Fatalf("Watch failed: %s", err)
 	}
 

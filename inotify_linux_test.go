@@ -415,3 +415,127 @@ func TestRemoveWatch(t *testing.T) {
 		t.Fatal("no IN_IGNORE flag in the event")
 	}
 }
+
+func TestSamename(t *testing.T) {
+	// Create an inotify watcher instance and initialize it
+	watcher, err := NewWatcher()
+	if err != nil {
+		t.Fatalf("NewWatcher failed: %s", err)
+	}
+
+	dir, err := ioutil.TempDir("", "inotify")
+	if err != nil {
+		t.Fatalf("TempDir failed: %s", err)
+	}
+	defer os.RemoveAll(dir)
+
+	// Receive errors on the error channel on a separate goroutine
+	go func() {
+		for err := range watcher.Error {
+			t.Fatalf("error received: %s", err)
+		}
+	}()
+
+	// Receive events on the event channel on a separate goroutine
+	eventstream := watcher.Event
+	var event *Event
+	testFileName := dir + "/TestInotifyEvents.testfile"
+
+	// IN_OPEN
+	testFile, err := os.OpenFile(testFileName, os.O_WRONLY|os.O_CREATE, 0666)
+	if err != nil {
+		t.Fatalf("creating test file: %s", err)
+	}
+
+	err = watcher.AddWatch(testFileName, IN_CLOSE)
+	// err = watcher.AddWatch(testFileName, IN_CLOSE | IN_MODIFY)
+	if err != nil {
+		t.Fatalf("AddWatch failed: %s", err)
+	}
+
+	if _, err  = testFile.Write(([]byte)("test line 1")); err != nil {
+		t.Fatalf("writing to test file: %s", err)
+	}
+	if err = testFile.Sync(); err != nil {
+		t.Fatal("sync test file: %s", err)
+	}
+
+	select {
+	case event = <-eventstream:
+		t.Fatalf("should not receive event, but got: %s, mask: %08x",
+			event.Name, event.Mask);
+	case <- time.After(10 * time.Millisecond):
+	}
+
+	err = watcher.AddWatch(testFileName, IN_MODIFY)
+	if err != nil {
+		t.Fatalf("AddWatch failed: %s", err)
+	}
+	if _, err  = testFile.Write(([]byte)("test line 2")); err != nil {
+		t.Fatalf("writing to test file: %s", err)
+	}
+	if err = testFile.Sync(); err != nil {
+		t.Fatalf("sync test file: %s", err)
+	}
+
+	select {
+	case event = <-eventstream:
+		if event.Mask & IN_MODIFY == 0 {
+			t.Fatalf("should receive IN_MODIFY, but got: %08x",
+				event.Mask)
+		}
+		if event.Name != testFile.Name() {
+			t.Fatalf("should receive name: %s, but got: %s",
+				testFile.Name(), event.Name)
+		}
+	case <- time.After(10 * time.Millisecond):
+		t.Fatal("should receive IN_MODIFY event, but got nothing")
+	}
+
+	// IN_CLOSE
+	testFile.Close()
+	select {
+	case event = <- eventstream:
+		if event.Mask & IN_CLOSE == 0 {
+			t.Fatalf("should receive IN_CLOSE, but got: %08x",
+				event.Mask)
+		}
+		if event.Name != testFile.Name() {
+			t.Fatalf("should receive name: %s, but got: %s",
+				testFile.Name(), event.Name)
+		}
+	case <- time.After(10 * time.Millisecond):
+		t.Fatal("should receive IN_CLOSE event, but got nothing")
+	}
+
+	// IN_DELETE & IN_IGNORED, but should get IN_IGNORED only
+	if err = os.Remove(testFileName); err != nil {
+		t.Fatalf("removing test file: %s", err)
+	}
+	select {
+	case event = <-eventstream:
+		if event.Mask & IN_IGNORED == 0 {
+			t.Fatalf("should receive IN_IGNORED, but got: %08x",
+				event.Mask)
+		}
+		if event.Name != testFile.Name() {
+			t.Fatalf("should receive name: %s, but got: %s",
+				testFile.Name(), event.Name)
+		}
+	case <- time.After(10 * time.Millisecond):
+	}
+	select {
+	case event = <-eventstream:
+		t.Fatalf("should not receive event, but got: %s, mask: %08x",
+			event.Name, event.Mask);
+	case <- time.After(10 * time.Millisecond):
+	}
+
+	if err = watcher.Close(); err != nil {
+		t.Fatalf("error on close: %s", err)
+	}
+
+	if watcher.IsValid() {
+		t.Fatal("still valid after Close()")
+	}
+}

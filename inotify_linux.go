@@ -121,27 +121,33 @@ func NewWatcher() (*Watcher, error) {
 // It sends a message to the reader goroutine to quit and removes all watches
 // associated with the inotify instance
 func (w *Watcher) Close() error {
+	// XXX: illigal mu usage
+	// mu protects maps only but use to protect fd here
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	if w.fd < 0 {
-		return os.NewSyscallError("close", syscall.EBADF)
+		return os.NewSyscallError("closed", syscall.EBADF)
 	}
+
 	// Send "quit" message to the reader goroutine
+	// then channels are closed in epollEvents()
 	w.done <- true
 	// And wait receiving it's actually closed
 	<- w.closed
 
-	w.mu.Lock() // synchronize fd invalidation
 	if err := syscall.Close(w.fd); err != nil {
-		w.mu.Unlock()
+		// XXX: become inconsistent state
 		return os.NewSyscallError("close", err)
 	}
-
-	// invalidate inotify descriptor
-	w.fd = -1
-	w.mu.Unlock()
+	w.fd = -1 // invalidate inotify descriptor
 
 	// inotify(7):
 	// When  all file descriptors referring to an inotify instance have been
 	// closed, ...; all associated watches are automatically freed.
+	w.watches = nil
+	w.paths = nil
+	w.cond = nil
 
 	return nil
 }
@@ -155,6 +161,10 @@ func (w *Watcher) AddWatch(path string, flags uint32) error {
 func (w *Watcher) AddWatchFilter(path string, flags uint32, filter func(*Event) bool) error {
 	w.mu.Lock() // synchronization of Watcher map
 	defer w.mu.Unlock()
+
+	if w.fd < 0 {
+		return os.NewSyscallError("closed", syscall.EBADF)
+	}
 
 	watchEntry, found := w.watches[path]
 	if found {
@@ -194,6 +204,10 @@ func (w *Watcher) WatchFilter(path string, filter func(*Event) bool) error {
 func (w *Watcher) RemoveWatch(path string) error {
 	w.mu.Lock() // synchronization of Watcher map
 	defer w.mu.Unlock()
+
+	if w.fd < 0 {
+		return os.NewSyscallError("closed", syscall.EBADF)
+	}
 
 	watch, ok := w.watches[path]
 	if !ok {

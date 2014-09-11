@@ -66,8 +66,8 @@ func TestInotifyEvents(t *testing.T) {
 		t.Fatalf("creating test file: %s", err)
 	}
 
-	// We expect this event to be received almost immediately, but let's wait 1 s to be sure
-	time.Sleep(1 * time.Second)
+	// We expect this event to be received almost immediately, but let's wait 10ms to be sure
+	time.Sleep(10 * time.Millisecond)
 	if atomic.AddInt32(&eventsReceived, 0) == 0 {
 		t.Fatal("inotify event hasn't been received after 1 second")
 	}
@@ -212,6 +212,8 @@ func TestIgnoredEvents(t *testing.T) {
 		}
 	}
 
+	// wait for catching up to inotify IGNORE event
+	time.Sleep(10 * time.Millisecond)
 	if watcher.Len() != 0 {
 		t.Fatalf("watcher entries should be 0, but got: %d", watcher.Len())
 	}
@@ -271,8 +273,8 @@ func TestInotifyOneshot(t *testing.T) {
 		t.Fatalf("creating test file: %s", err)
 	}
 
-	// We expect this event to be received almost immediately, but let's wait 1 s to be sure
-	time.Sleep(1 * time.Second)
+	// We expect this event to be received almost immediately, but let's wait 10ms to be sure
+	time.Sleep(10 * time.Millisecond)
 	if atomic.AddInt32(&eventsReceived, 0) != 2 {
 		// IN_CREATE and IN_IGNORED
 		t.Fatal("inotify event hasn't been received after 1 second")

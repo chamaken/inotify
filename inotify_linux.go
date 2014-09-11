@@ -325,11 +325,7 @@ func (w *Watcher) readEvents() error {
 	return nil
 }
 
-func (w *Watcher) IsValid() bool {
-	return w.running
-}
-
-func (w *Watcher) Len() int {
+func (w *Watcher) length() int {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if len(w.watches) != len(w.paths) {

@@ -91,7 +91,7 @@ func TestInotifyClose(t *testing.T) {
 	if err := watcher.Close(); err != nil {
 		t.Fatalf("close returns: %s", err)
 	}
-	if watcher.IsValid() {
+	if watcher.running {
 		t.Fatal("still valid after Close()")
 	}
 
@@ -216,11 +216,11 @@ func TestIgnoredEvents(t *testing.T) {
 
 	// wait for catching up to inotify IGNORE event
 	time.Sleep(TIMEOUT)
-	if watcher.Len() != 0 {
-		t.Fatalf("watcher entries should be 0, but got: %d", watcher.Len())
+	if watcher.length() != 0 {
+		t.Fatalf("watcher entries should be 0, but got: %d", watcher.length())
 	}
 	watcher.Close()
-	if watcher.IsValid() {
+	if watcher.running {
 		t.Fatal("still valid after Close()")
 	}
 }
@@ -378,7 +378,7 @@ func TestFilterEvent(t *testing.T) {
 	}
 
 	watcher.Close()
-	if watcher.IsValid() {
+	if watcher.running {
 		t.Fatal("still valid after Close()")
 	}
 }
@@ -414,7 +414,7 @@ func TestRemoveWatch(t *testing.T) {
 
 	}
 	watcher.Close()
-	if watcher.IsValid() {
+	if watcher.running {
 		t.Fatal("still valid after Close()")
 	}
 }
@@ -538,7 +538,7 @@ func TestSamename(t *testing.T) {
 		t.Fatalf("error on close: %s", err)
 	}
 
-	if watcher.IsValid() {
+	if watcher.running {
 		t.Fatal("still valid after Close()")
 	}
 }

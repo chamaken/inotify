@@ -171,10 +171,14 @@ func (w *Watcher) AddWatchFilter(path string, flags uint32, filter func(*Event) 
 		}
 	}
 
-	if !found {
-		w.watches[path] = &watch{wd: uint32(wd), flags: flags, filter: filter}
-		w.paths[wd] = path
+	if found {
+		// wd seems not changing, just updating
+		// but I could not found its express term
+		delete(w.paths, int(watchEntry.wd))
 	}
+	w.watches[path] = &watch{wd: uint32(wd), flags: flags, filter: filter}
+	w.paths[wd] = path
+
 	return nil
 }
 

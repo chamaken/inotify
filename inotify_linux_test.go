@@ -14,6 +14,8 @@ import (
 	"time"
 )
 
+var TIMEOUT = 100 * time.Millisecond
+
 func TestInotifyEvents(t *testing.T) {
 	// Create an inotify watcher instance and initialize it
 	watcher, err := NewWatcher()
@@ -67,9 +69,9 @@ func TestInotifyEvents(t *testing.T) {
 	}
 
 	// We expect this event to be received almost immediately, but let's wait 10ms to be sure
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(TIMEOUT)
 	if atomic.AddInt32(&eventsReceived, 0) == 0 {
-		t.Fatal("inotify event hasn't been received after 1 second")
+		t.Fatal("inotify event hasn't been received after 100ms")
 	}
 
 	// Try closing the inotify instance
@@ -79,8 +81,8 @@ func TestInotifyEvents(t *testing.T) {
 	select {
 	case <-done:
 		t.Log("event channel closed")
-	case <-time.After(1 * time.Second):
-		t.Fatal("event stream was not closed after 1 second")
+	case <-time.After(TIMEOUT):
+		t.Fatal("event stream was not closed after 100ms")
 	}
 }
 
@@ -103,7 +105,7 @@ func TestInotifyClose(t *testing.T) {
 
 	select {
 	case <-done:
-	case <-time.After(50 * time.Millisecond):
+	case <-time.After(TIMEOUT):
 		t.Fatal("double Close() test failed: second Close() call didn't return")
 	}
 
@@ -213,7 +215,7 @@ func TestIgnoredEvents(t *testing.T) {
 	}
 
 	// wait for catching up to inotify IGNORE event
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(TIMEOUT)
 	if watcher.Len() != 0 {
 		t.Fatalf("watcher entries should be 0, but got: %d", watcher.Len())
 	}
@@ -277,10 +279,10 @@ func TestInotifyOneshot(t *testing.T) {
 	}
 
 	// We expect this event to be received almost immediately, but let's wait 10ms to be sure
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(TIMEOUT)
 	if atomic.AddInt32(&eventsReceived, 0) != 2 {
 		// IN_CREATE and IN_IGNORED
-		t.Fatal("inotify event hasn't been received after 1 second")
+		t.Fatal("inotify event hasn't been received after 100ms")
 	}
 
 	// Try closing the inotify instance
@@ -290,8 +292,8 @@ func TestInotifyOneshot(t *testing.T) {
 	select {
 	case <-done:
 		t.Log("event channel closed")
-	case <-time.After(1 * time.Second):
-		t.Fatal("event stream was not closed after 1 second")
+	case <-time.After(TIMEOUT):
+		t.Fatal("event stream was not closed after 100ms")
 	}
 }
 
@@ -371,10 +373,8 @@ func TestFilterEvent(t *testing.T) {
 	event = nil
 	select {
 	case event = <-eventstream:
-	default:
-	}
-	if event != nil {
 		t.Fatal("receive unrelated event: %v", event)
+	case <- time.After(TIMEOUT):
 	}
 
 	watcher.Close()
@@ -406,13 +406,16 @@ func TestRemoveWatch(t *testing.T) {
 	var event *Event
 	select {
 	case event = <-watcher.Event:
-	default:
-	}
-	if event == nil {
+		if event.Mask & IN_IGNORED == 0 {
+			t.Fatal("no IN_IGNORE flag in the event")
+		}
+	case <-time.After(TIMEOUT):
 		t.Fatal("failed to receive event")
+
 	}
-	if event.Mask & IN_IGNORED == 0 {
-		t.Fatal("no IN_IGNORE flag in the event")
+	watcher.Close()
+	if watcher.IsValid() {
+		t.Fatal("still valid after Close()")
 	}
 }
 
@@ -464,7 +467,7 @@ func TestSamename(t *testing.T) {
 	case event = <-eventstream:
 		t.Fatalf("should not receive event, but got: %s, mask: %08x",
 			event.Name, event.Mask);
-	case <- time.After(10 * time.Millisecond):
+	case <- time.After(TIMEOUT):
 	}
 
 	err = watcher.AddWatch(testFileName, IN_MODIFY)
@@ -488,7 +491,7 @@ func TestSamename(t *testing.T) {
 			t.Fatalf("should receive name: %s, but got: %s",
 				testFile.Name(), event.Name)
 		}
-	case <- time.After(10 * time.Millisecond):
+	case <- time.After(TIMEOUT):
 		t.Fatal("should receive IN_MODIFY event, but got nothing")
 	}
 
@@ -504,7 +507,7 @@ func TestSamename(t *testing.T) {
 			t.Fatalf("should receive name: %s, but got: %s",
 				testFile.Name(), event.Name)
 		}
-	case <- time.After(10 * time.Millisecond):
+	case <- time.After(TIMEOUT):
 		t.Fatal("should receive IN_CLOSE event, but got nothing")
 	}
 
@@ -522,13 +525,13 @@ func TestSamename(t *testing.T) {
 			t.Fatalf("should receive name: %s, but got: %s",
 				testFile.Name(), event.Name)
 		}
-	case <- time.After(10 * time.Millisecond):
+	case <- time.After(TIMEOUT):
 	}
 	select {
 	case event = <-eventstream:
 		t.Fatalf("should not receive event, but got: %s, mask: %08x",
 			event.Name, event.Mask);
-	case <- time.After(10 * time.Millisecond):
+	case <- time.After(TIMEOUT):
 	}
 
 	if err = watcher.Close(); err != nil {

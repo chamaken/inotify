@@ -312,7 +312,11 @@ func (w *Watcher) IsValid() bool {
 }
 
 func (w *Watcher) Len() int {
-	// lock?
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if len(w.watches) != len(w.paths) {
+		panic("internal maps lengh is differ")
+	}
 	return len(w.watches)
 }
 

@@ -218,6 +218,9 @@ func TestIgnoredEvents(t *testing.T) {
 		t.Fatalf("watcher entries should be 0, but got: %d", watcher.Len())
 	}
 	watcher.Close()
+	if watcher.IsValid() {
+		t.Fatal("still valid after Close()")
+	}
 }
 
 func TestInotifyOneshot(t *testing.T) {
@@ -375,6 +378,9 @@ func TestFilterEvent(t *testing.T) {
 	}
 
 	watcher.Close()
+	if watcher.IsValid() {
+		t.Fatal("still valid after Close()")
+	}
 }
 
 func TestRemoveWatch(t *testing.T) {
@@ -409,4 +415,3 @@ func TestRemoveWatch(t *testing.T) {
 		t.Fatal("no IN_IGNORE flag in the event")
 	}
 }
-	

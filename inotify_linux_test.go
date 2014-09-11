@@ -201,19 +201,19 @@ func TestIgnoredEvents(t *testing.T) {
 			t.Fatal("inotify hasn't received IN_DELETE_SELF")
 		}
 		if event.Name != dir {
-			t.Fatalf("received different name event: %s", event)
+			t.Fatalf("received different name event: %s", event.Name)
 		}
 		event = <-eventstream
 		if event.Mask & (IN_IGNORED | IN_ONLYDIR) == 0 {
 			t.Fatal("inotify hasn't received IN_IGNORED")
 		}
 		if event.Name != dir {
-			t.Fatalf("received different name event: %s", event)
+			t.Fatalf("received different name event: %s", event.Name)
 		}
 	}
 
 	if watcher.Len() != 0 {
-		t.Fatal("watcher entries should be 0")
+		t.Fatalf("watcher entries should be 0, but got: %d", watcher.Len())
 	}
 	watcher.Close()
 }

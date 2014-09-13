@@ -37,7 +37,6 @@ package inotify
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 	"sync"
@@ -252,10 +251,7 @@ func (w *Watcher) epollEvents(epfd int, donef *os.File) {
 			} else if events[i].Fd != int32(w.fd) {
 				continue
 			}
-			err = w.readEvents()
-			if err == io.EOF {
-				return
-			} else if err != nil {
+			if err = w.readEvents(); err != nil {
 				w.Error <- err
 			}
 		}

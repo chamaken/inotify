@@ -225,8 +225,11 @@ func (w *Watcher) RemoveWatch(path string) error {
 
 func (w *Watcher) epollEvents(epfd int, donef *os.File) {
 	w.running = true
-	defer func() { w.running = false }()
-	defer syscall.Close(epfd)
+	defer func() {
+		syscall.Close(epfd)
+		w.running = false
+		w.closed <- true
+	}()
 	events := make([]syscall.EpollEvent, EPOLL_MAX_EVENTS)
 	donefd := int32(donef.Fd())
 	for {
@@ -246,7 +249,6 @@ func (w *Watcher) epollEvents(epfd int, donef *os.File) {
 				}
 				close(w.Event)
 				close(w.Error)
-				w.closed <- true
 				return
 			} else if events[i].Fd != int32(w.fd) {
 				continue

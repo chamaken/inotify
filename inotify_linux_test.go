@@ -7,6 +7,7 @@
 package inotify
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
 	"sync/atomic"
@@ -210,6 +211,32 @@ func TestIgnoredEvents(t *testing.T) {
 			t.Fatal("inotify hasn't received IN_IGNORED")
 		}
 		if event.Name != dir {
+			t.Fatalf("received different name event: %s", event.Name)
+		}
+	}
+	// repeat again, changing dirname and append / at last
+	for j := 0; j < 64; j++ {
+		name := fmt.Sprintf("%s/%d/", dir, j);
+		if err = os.MkdirAll(name, 0755); err != nil {
+			t.Fatalf("MkdirAll tempdir[%s] again failed: %s", dir, err)
+		}
+		if err = watcher.Watch(name); err != nil {
+			t.Fatalf("Watch failed: %s", err)
+		}
+		os.RemoveAll(name)
+		// IN_DELETE_SELF, IN_IGNORED
+		event = <-eventstream
+		if event.Mask & (IN_DELETE_SELF | IN_ONLYDIR) == 0 {
+			t.Fatal("inotify hasn't received IN_DELETE_SELF")
+		}
+		if event.Name != name {
+			t.Fatalf("received different name event: %s", event.Name)
+		}
+		event = <-eventstream
+		if event.Mask & (IN_IGNORED | IN_ONLYDIR) == 0 {
+			t.Fatal("inotify hasn't received IN_IGNORED")
+		}
+		if event.Name != name {
 			t.Fatalf("received different name event: %s", event.Name)
 		}
 	}

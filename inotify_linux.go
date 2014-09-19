@@ -44,7 +44,7 @@ import (
 	"unsafe"
 )
 
-const EPOLL_MAX_EVENTS	= 64
+const EPOLL_MAX_EVENTS = 64
 
 type Event struct {
 	Mask   uint32 // Mask of events
@@ -59,16 +59,16 @@ type watch struct {
 }
 
 type Watcher struct {
-	mu       sync.Mutex
-	cond     *sync.Cond        // sync removing on rm_watch with IN_IGNORE
-	fd       int               // File descriptor (as returned by the inotify_init() syscall)
-	watches  map[string]*watch // Map of inotify watches (key: path)
-	paths    map[int]string    // Map of watched paths (key: watch descriptor)
-	Error    chan error        // Errors are sent on this channel
-	Event    chan *Event       // Events are returned on this channel
-	done     chan bool         // Channel for sending a "quit message" to the reader goroutine
-	closed   chan bool         // Channel for syncing Close()s
-	running  bool              // is go routine running?
+	mu      sync.Mutex
+	cond    *sync.Cond        // sync removing on rm_watch with IN_IGNORE
+	fd      int               // File descriptor (as returned by the inotify_init() syscall)
+	watches map[string]*watch // Map of inotify watches (key: path)
+	paths   map[int]string    // Map of watched paths (key: watch descriptor)
+	Error   chan error        // Errors are sent on this channel
+	Event   chan *Event       // Events are returned on this channel
+	done    chan bool         // Channel for sending a "quit message" to the reader goroutine
+	closed  chan bool         // Channel for syncing Close()s
+	running bool              // is go routine running?
 }
 
 // NewWatcher creates and returns a new inotify instance using inotify_init(2)
@@ -93,7 +93,7 @@ func NewWatcher() (*Watcher, error) {
 		return nil, err
 	}
 	go func() {
-		for b := <- w.done; b; b = <- w.done {
+		for b := <-w.done; b; b = <-w.done {
 			wp.Close()
 		}
 	}()
@@ -133,7 +133,7 @@ func (w *Watcher) Close() error {
 	// then channels are closed in epollEvents()
 	w.done <- true
 	// And wait receiving it's actually closed
-	<- w.closed
+	<-w.closed
 
 	if err := syscall.Close(w.fd); err != nil {
 		// XXX: become inconsistent state
@@ -258,7 +258,7 @@ func (w *Watcher) epollEvents(epfd int, donef *os.File) {
 			}
 		}
 	}
-}				
+}
 
 // readEvents reads from the inotify file descriptor, converts the
 // received events into Event objects and sends them via the Event channel
@@ -299,7 +299,7 @@ func (w *Watcher) readEvents() error {
 		w.mu.Lock()
 		event.Name = w.paths[int(raw.Wd)]
 		filter := w.watches[event.Name].filter
-		if event.Mask & IN_IGNORED != 0 {
+		if event.Mask&IN_IGNORED != 0 {
 			delete(w.paths, int(raw.Wd))
 			delete(w.watches, event.Name)
 		}
@@ -314,7 +314,7 @@ func (w *Watcher) readEvents() error {
 		// Send the event on the events channel
 		if filter == nil || filter(event) {
 			w.Event <- event
-		} 
+		}
 
 		// Move to the next event in the buffer
 		offset += syscall.SizeofInotifyEvent + nameLen

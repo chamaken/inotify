@@ -154,18 +154,18 @@ func TestIgnoredEvents(t *testing.T) {
 		t.Fatalf("creating test file: %s", err)
 	}
 	event = <-eventstream
-	if event.Mask & IN_CREATE == 0 {
+	if event.Mask&IN_CREATE == 0 {
 		t.Fatal("inotify hasn't received IN_CREATE")
 	}
 	event = <-eventstream
-	if event.Mask & IN_OPEN == 0 {
+	if event.Mask&IN_OPEN == 0 {
 		t.Fatal("inotify hasn't received IN_OPEN")
 	}
 
 	// IN_CLOSE
 	testFile.Close()
 	event = <-eventstream
-	if event.Mask & IN_CLOSE == 0 {
+	if event.Mask&IN_CLOSE == 0 {
 		t.Fatal("inotify hasn't received IN_CLOSE")
 	}
 
@@ -174,18 +174,18 @@ func TestIgnoredEvents(t *testing.T) {
 		t.Fatal("removing test file: %s", err)
 	}
 	event = <-eventstream
-	if event.Mask & IN_DELETE == 0 {
+	if event.Mask&IN_DELETE == 0 {
 		t.Fatal("inotify hasn't received IN_DELETE")
 	}
 
 	// IN_DELETE_SELF, IN_IGNORED
 	os.RemoveAll(dir)
 	event = <-eventstream
-	if event.Mask & (IN_DELETE_SELF | IN_ONLYDIR) == 0 {
+	if event.Mask&(IN_DELETE_SELF|IN_ONLYDIR) == 0 {
 		t.Fatal("inotify hasn't received IN_DELETE_SELF")
 	}
 	event = <-eventstream
-	if event.Mask & (IN_IGNORED | IN_ONLYDIR) == 0 {
+	if event.Mask&(IN_IGNORED|IN_ONLYDIR) == 0 {
 		t.Fatal("inotify hasn't received IN_IGNORED")
 	}
 
@@ -200,14 +200,14 @@ func TestIgnoredEvents(t *testing.T) {
 		os.RemoveAll(dir)
 		// IN_DELETE_SELF, IN_IGNORED
 		event = <-eventstream
-		if event.Mask & (IN_DELETE_SELF | IN_ONLYDIR) == 0 {
+		if event.Mask&(IN_DELETE_SELF|IN_ONLYDIR) == 0 {
 			t.Fatal("inotify hasn't received IN_DELETE_SELF")
 		}
 		if event.Name != dir {
 			t.Fatalf("received different name event: %s", event.Name)
 		}
 		event = <-eventstream
-		if event.Mask & (IN_IGNORED | IN_ONLYDIR) == 0 {
+		if event.Mask&(IN_IGNORED|IN_ONLYDIR) == 0 {
 			t.Fatal("inotify hasn't received IN_IGNORED")
 		}
 		if event.Name != dir {
@@ -216,7 +216,7 @@ func TestIgnoredEvents(t *testing.T) {
 	}
 	// repeat again, changing dirname and append / at last
 	for j := 0; j < 64; j++ {
-		name := fmt.Sprintf("%s/%d/", dir, j);
+		name := fmt.Sprintf("%s/%d/", dir, j)
 		if err = os.MkdirAll(name, 0755); err != nil {
 			t.Fatalf("MkdirAll tempdir[%s] again failed: %s", dir, err)
 		}
@@ -226,14 +226,14 @@ func TestIgnoredEvents(t *testing.T) {
 		os.RemoveAll(name)
 		// IN_DELETE_SELF, IN_IGNORED
 		event = <-eventstream
-		if event.Mask & (IN_DELETE_SELF | IN_ONLYDIR) == 0 {
+		if event.Mask&(IN_DELETE_SELF|IN_ONLYDIR) == 0 {
 			t.Fatal("inotify hasn't received IN_DELETE_SELF")
 		}
 		if event.Name != name {
 			t.Fatalf("received different name event: %s", event.Name)
 		}
 		event = <-eventstream
-		if event.Mask & (IN_IGNORED | IN_ONLYDIR) == 0 {
+		if event.Mask&(IN_IGNORED|IN_ONLYDIR) == 0 {
 			t.Fatal("inotify hasn't received IN_IGNORED")
 		}
 		if event.Name != name {
@@ -287,7 +287,7 @@ func TestInotifyOneshot(t *testing.T) {
 	go func() {
 		for event := range eventstream {
 			// Only count relevant events
-			if event.Name == testFile  || event.Name == dir {
+			if event.Name == testFile || event.Name == dir {
 				atomic.AddInt32(&eventsReceived, 1)
 				t.Logf("event received: %s", event)
 			} else {
@@ -351,7 +351,6 @@ func TestFilterEvent(t *testing.T) {
 		}
 	}()
 
-
 	// Receive events on the event channel on a separate goroutine
 	eventstream := watcher.Event
 	var event *Event
@@ -363,12 +362,12 @@ func TestFilterEvent(t *testing.T) {
 	}
 	event = <-eventstream
 	t.Logf("event received: %s", event)
-	if event.Mask & IN_CREATE == 0 {
+	if event.Mask&IN_CREATE == 0 {
 		t.Fatal("inotify hasn't received IN_CREATE")
 	}
 	event = <-eventstream
 	t.Logf("event received: %s", event)
-	if event.Mask & IN_OPEN == 0 {
+	if event.Mask&IN_OPEN == 0 {
 		t.Fatal("inotify hasn't received IN_OPEN")
 	}
 
@@ -376,7 +375,7 @@ func TestFilterEvent(t *testing.T) {
 	testFile.Close()
 	event = <-eventstream
 	t.Logf("event received: %s", event)
-	if event.Mask & IN_CLOSE == 0 {
+	if event.Mask&IN_CLOSE == 0 {
 		t.Fatal("inotify hasn't received IN_CLOSE")
 	}
 
@@ -386,7 +385,7 @@ func TestFilterEvent(t *testing.T) {
 	}
 	event = <-eventstream
 	t.Logf("event received: %s", event)
-	if event.Mask & IN_DELETE == 0 {
+	if event.Mask&IN_DELETE == 0 {
 		t.Fatal("inotify hasn't received IN_DELETE")
 	}
 
@@ -401,7 +400,7 @@ func TestFilterEvent(t *testing.T) {
 	select {
 	case event = <-eventstream:
 		t.Fatal("receive unrelated event: %v", event)
-	case <- time.After(TIMEOUT):
+	case <-time.After(TIMEOUT):
 	}
 
 	watcher.Close()
@@ -433,7 +432,7 @@ func TestRemoveWatch(t *testing.T) {
 	var event *Event
 	select {
 	case event = <-watcher.Event:
-		if event.Mask & IN_IGNORED == 0 {
+		if event.Mask&IN_IGNORED == 0 {
 			t.Fatal("no IN_IGNORE flag in the event")
 		}
 	case <-time.After(TIMEOUT):
@@ -483,7 +482,7 @@ func TestSamename(t *testing.T) {
 		t.Fatalf("AddWatch failed: %s", err)
 	}
 
-	if _, err  = testFile.Write(([]byte)("test line 1")); err != nil {
+	if _, err = testFile.Write(([]byte)("test line 1")); err != nil {
 		t.Fatalf("writing to test file: %s", err)
 	}
 	if err = testFile.Sync(); err != nil {
@@ -493,15 +492,15 @@ func TestSamename(t *testing.T) {
 	select {
 	case event = <-eventstream:
 		t.Fatalf("should not receive event, but got: %s, mask: %08x",
-			event.Name, event.Mask);
-	case <- time.After(TIMEOUT):
+			event.Name, event.Mask)
+	case <-time.After(TIMEOUT):
 	}
 
 	err = watcher.AddWatch(testFileName, IN_MODIFY)
 	if err != nil {
 		t.Fatalf("AddWatch failed: %s", err)
 	}
-	if _, err  = testFile.Write(([]byte)("test line 2")); err != nil {
+	if _, err = testFile.Write(([]byte)("test line 2")); err != nil {
 		t.Fatalf("writing to test file: %s", err)
 	}
 	if err = testFile.Sync(); err != nil {
@@ -510,7 +509,7 @@ func TestSamename(t *testing.T) {
 
 	select {
 	case event = <-eventstream:
-		if event.Mask & IN_MODIFY == 0 {
+		if event.Mask&IN_MODIFY == 0 {
 			t.Fatalf("should receive IN_MODIFY, but got: %08x",
 				event.Mask)
 		}
@@ -518,15 +517,15 @@ func TestSamename(t *testing.T) {
 			t.Fatalf("should receive name: %s, but got: %s",
 				testFile.Name(), event.Name)
 		}
-	case <- time.After(TIMEOUT):
+	case <-time.After(TIMEOUT):
 		t.Fatal("should receive IN_MODIFY event, but got nothing")
 	}
 
 	// IN_CLOSE
 	testFile.Close()
 	select {
-	case event = <- eventstream:
-		if event.Mask & IN_CLOSE == 0 {
+	case event = <-eventstream:
+		if event.Mask&IN_CLOSE == 0 {
 			t.Fatalf("should receive IN_CLOSE, but got: %08x",
 				event.Mask)
 		}
@@ -534,7 +533,7 @@ func TestSamename(t *testing.T) {
 			t.Fatalf("should receive name: %s, but got: %s",
 				testFile.Name(), event.Name)
 		}
-	case <- time.After(TIMEOUT):
+	case <-time.After(TIMEOUT):
 		t.Fatal("should receive IN_CLOSE event, but got nothing")
 	}
 
@@ -544,7 +543,7 @@ func TestSamename(t *testing.T) {
 	}
 	select {
 	case event = <-eventstream:
-		if event.Mask & IN_IGNORED == 0 {
+		if event.Mask&IN_IGNORED == 0 {
 			t.Fatalf("should receive IN_IGNORED, but got: %08x",
 				event.Mask)
 		}
@@ -552,13 +551,13 @@ func TestSamename(t *testing.T) {
 			t.Fatalf("should receive name: %s, but got: %s",
 				testFile.Name(), event.Name)
 		}
-	case <- time.After(TIMEOUT):
+	case <-time.After(TIMEOUT):
 	}
 	select {
 	case event = <-eventstream:
 		t.Fatalf("should not receive event, but got: %s, mask: %08x",
-			event.Name, event.Mask);
-	case <- time.After(TIMEOUT):
+			event.Name, event.Mask)
+	case <-time.After(TIMEOUT):
 	}
 
 	if err = watcher.Close(); err != nil {

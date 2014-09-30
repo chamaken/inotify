@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -566,5 +567,56 @@ func TestSamename(t *testing.T) {
 
 	if watcher.running {
 		t.Fatal("still valid after Close()")
+	}
+}
+
+func TestRemoveClose(t *testing.T) {
+	watcher, err := NewWatcher()
+	if err != nil {
+		t.Fatalf("NewWatcher failed: %s", err)
+	}
+	go func() {
+		for err := range watcher.Error {
+			t.Fatalf("error received: %s", err)
+		}
+	}()
+	go func() {
+		for _ = range watcher.Event {
+			// do nothing
+		}
+	}()
+
+	dir, err := ioutil.TempDir("", "inotify")
+	if err != nil {
+		t.Fatalf("TempDir failed: %s", err)
+	}
+	defer os.RemoveAll(dir)
+
+	for i := 0; i < 1000; i++ {
+		testFileName := filepath.Join(dir, fmt.Sprintf("TestInotifyEvents.%d", i))
+		testFile, err := os.OpenFile(testFileName, os.O_WRONLY|os.O_CREATE, 0666)
+		if err != nil {
+			t.Fatalf("creating test file: %s", err)
+		}
+		if err = testFile.Close(); err != nil {
+			t.Fatalf("close test file: %s", err)
+		}
+		if err = watcher.Watch(testFileName); err != nil {
+			t.Fatalf("Watch(%s) failed: %s", testFileName, err)
+		}
+		if err = os.Remove(testFileName); err != nil {
+			t.Fatalf("remove test file: %s", err)
+		}
+	}
+
+	done := make(chan bool)
+	go func() {
+		watcher.Close()
+		done <- true
+	}()
+	select {
+	case <-done:
+	case <-time.After(TIMEOUT):
+		t.Fatal("Close() not returned")
 	}
 }

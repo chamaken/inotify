@@ -83,7 +83,7 @@ func NewWatcher() (*Watcher, error) {
 		paths:   make(map[int]string),
 		Event:   make(chan *Event),
 		Error:   make(chan error),
-		done:    make(chan bool, 1),
+		done:    make(chan bool),
 		closed:  make(chan bool),
 	}
 	w.cond = sync.NewCond(&w.mu)

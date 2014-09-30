@@ -120,11 +120,6 @@ func NewWatcher() (*Watcher, error) {
 // It sends a message to the reader goroutine to quit and removes all watches
 // associated with the inotify instance
 func (w *Watcher) Close() error {
-	// XXX: illigal mu usage
-	// mu protects maps only but use to protect fd here
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
 	if w.fd < 0 {
 		return os.NewSyscallError("closed", syscall.EBADF)
 	}
@@ -158,13 +153,12 @@ func (w *Watcher) AddWatch(path string, flags uint32) error {
 }
 
 func (w *Watcher) AddWatchFilter(path string, flags uint32, filter func(*Event) bool) error {
-	w.mu.Lock() // synchronization of Watcher map
-	defer w.mu.Unlock()
-
 	if w.fd < 0 {
 		return os.NewSyscallError("closed", syscall.EBADF)
 	}
 
+	w.mu.Lock() // synchronization of Watcher map
+	defer w.mu.Unlock()
 	watchEntry, found := w.watches[path]
 	if found {
 		watchEntry.flags |= flags
@@ -201,13 +195,12 @@ func (w *Watcher) WatchFilter(path string, filter func(*Event) bool) error {
 
 // RemoveWatch removes path from the watched file set.
 func (w *Watcher) RemoveWatch(path string) error {
-	w.mu.Lock() // synchronization of Watcher map
-	defer w.mu.Unlock()
-
 	if w.fd < 0 {
 		return os.NewSyscallError("closed", syscall.EBADF)
 	}
 
+	w.mu.Lock() // synchronization of Watcher map
+	defer w.mu.Unlock()
 	watch, ok := w.watches[path]
 	if !ok {
 		return errors.New(fmt.Sprintf("can't remove non-existent inotify watch for: %s", path))

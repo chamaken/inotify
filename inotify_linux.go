@@ -93,9 +93,8 @@ func NewWatcher() (*Watcher, error) {
 		return nil, err
 	}
 	go func() {
-		for b := <-w.done; b; b = <-w.done {
-			wp.Close()
-		}
+		<-w.done
+		wp.Close()
 	}()
 
 	epfd, err := syscall.EpollCreate1(0)
@@ -240,6 +239,7 @@ func (w *Watcher) epollEvents(epfd int, donef *os.File) {
 				if err = donef.Close(); err != nil {
 					w.Error <- err
 				}
+				close(w.done)
 				close(w.Event)
 				close(w.Error)
 				return
